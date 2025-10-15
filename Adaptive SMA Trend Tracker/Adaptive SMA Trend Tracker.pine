@@ -1,0 +1,172 @@
+// MIT License
+//
+// Copyright (c) 2024
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+
+//@version=6
+indicator("Adaptive SMA Trend Tracker", overlay=true)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const int MAX_BARS = 5000
+const int DAYS_TO_LOCK = 3
+const int SECONDS_PER_DAY = 86400
+
+max_bars_back(close, MAX_BARS)
+
+// SMA Colors - Daily
+const color COL_SMA5   = #fbbe30  // Yellow - 5-day
+const color COL_SMA20  = #f47b00  // Orange - 20-day
+const color COL_SMA50  = #d62060  // Pink - 50-day
+const color COL_SMA200 = #e43b38  // Red - 200-day
+
+// SMA Colors - Weekly (default to match 20-day, 50-day, 200-day)
+const color COL_SMA20W = #f47b00  // Orange - 20-week
+const color COL_SMA32W = #d62060  // Pink - 32-week
+const color COL_SMA42W = #e43b38  // Red - 42-week
+
+// Shading Colors
+const color COL_SHADE_BULLISH = color.new(#81ce6f, 90)   // Green
+const color COL_SHADE_BEARISH = color.new(#e43b38, 90)   // Red
+const color COL_SHADE_TRANSITION = color.new(#fbbe30, 90) // Yellow
+
+// Inputs
+show5StartLineInput = input.bool(true, "Show 5-Day", inline="5", group="Start Lines")
+startLineStyle5Input = input.string("Dashed", "Style",
+     options=["Solid", "Dashed", "Dotted"], inline="5", group="Start Lines")
+
+show50StartLineInput = input.bool(false, "Show 50-Day", inline="50", group="Start Lines")
+startLineStyle50Input = input.string("Dashed", "Style",
+     options=["Solid", "Dashed", "Dotted"], inline="50", group="Start Lines")
+
+show200StartLineInput = input.bool(false, "Show 200-Day", inline="200", group="Start Lines")
+startLineStyle200Input = input.string("Dashed", "Style",
+     options=["Solid", "Dashed", "Dotted"], inline="200", group="Start Lines")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BARS PER DAY CALCULATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+isWeekly = timeframe.isweekly
+var float barsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_DAY / timeframe.in_seconds()) : 1.0
+var int dayStartBar = na
+var int validDays = 0
+
+if timeframe.change("D") and barstate.isconfirmed and not isWeekly
+    if not na(dayStartBar) and validDays < DAYS_TO_LOCK
+        int actualBars = bar_index - dayStartBar
+        if actualBars > 0
+            barsPerDay := actualBars
+            validDays += 1
+    dayStartBar := bar_index
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SMA CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Daily SMA periods and validation
+len5   = int(5 * barsPerDay)
+len20  = int(20 * barsPerDay)
+len50  = int(50 * barsPerDay)
+len200 = int(200 * barsPerDay)
+
+canShow5   = len5 <= MAX_BARS
+canShow20  = len20 <= MAX_BARS
+canShow50  = len50 <= MAX_BARS
+canShow200 = len200 <= MAX_BARS
+
+// Compute SMAs (clamped to max bars)
+sma5   = ta.sma(close, math.min(len5, MAX_BARS))
+sma20  = ta.sma(close, math.min(len20, MAX_BARS))
+sma50  = ta.sma(close, math.min(len50, MAX_BARS))
+sma200 = ta.sma(close, math.min(len200, MAX_BARS))
+
+// Weekly SMAs (simple periods)
+sma20w = ta.sma(close, 20)
+sma32w = ta.sma(close, 32)
+sma42w = ta.sma(close, 42)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHADING LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════
+
+priceAbove = close > sma5
+smaUp = sma5 > sma5[1]
+canShade = timeframe.isintraday and not isWeekly and canShow5 and bar_index >= len5 - 1 and not na(sma5[1])
+
+smaColor = canShade ?
+     (priceAbove and smaUp ? COL_SHADE_BULLISH :
+      not priceAbove and not smaUp ? COL_SHADE_BEARISH :
+      COL_SHADE_TRANSITION) : na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PLOTS - DAILY SMAs (SMALLEST TO LARGEST)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+show5   = not isWeekly and timeframe.isintraday and canShow5 and bar_index >= len5 - 1
+show20  = not isWeekly and canShow20 and bar_index >= len20 - 1
+show50  = not isWeekly and canShow50 and bar_index >= len50 - 1
+show200 = not isWeekly and canShow200 and bar_index >= len200 - 1
+
+p5 = plot(show5 ? sma5 : na, "5-Day SMA", COL_SMA5, 2)
+plot(show20 ? sma20 : na, "20-Day SMA", COL_SMA20, 2)
+p50 = plot(show50 ? sma50 : na, "50-Day SMA", COL_SMA50, 2)
+p200 = plot(show200 ? sma200 : na, "200-Day SMA", COL_SMA200, 2)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PLOTS - WEEKLY SMAs (SMALLEST TO LARGEST)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+plot(isWeekly and bar_index >= 19 ? sma20w : na, "20-Week SMA", COL_SMA20W, 2)
+plot(isWeekly and bar_index >= 31 ? sma32w : na, "32-Week SMA", COL_SMA32W, 2)
+plot(isWeekly and bar_index >= 41 ? sma42w : na, "42-Week SMA", COL_SMA42W, 2)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHADING & START LINES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+pClose = plot(close, display=display.none, editable=false)
+fill(pClose, p5, smaColor, title="5-Day SMA Shading")
+
+// Start lines
+getLineStyle(s) => s == "Solid" ? line.style_solid : s == "Dotted" ? line.style_dotted : line.style_dashed
+
+var line startLine5 = na
+if barstate.islast and show5 and show5StartLineInput and na(startLine5)
+    startBar = bar_index - len5 + 1
+    if startBar >= 0
+        startLine5 := line.new(startBar, low[len5 - 1], startBar, high[len5 - 1],
+             extend=extend.both, color=COL_SMA5, style=getLineStyle(startLineStyle5Input), width=2)
+
+var line startLine50 = na
+if barstate.islast and show50 and show50StartLineInput and na(startLine50)
+    startBar = bar_index - len50 + 1
+    if startBar >= 0
+        startLine50 := line.new(startBar, low[len50 - 1], startBar, high[len50 - 1],
+             extend=extend.both, color=COL_SMA50, style=getLineStyle(startLineStyle50Input), width=2)
+
+var line startLine200 = na
+if barstate.islast and show200 and show200StartLineInput and na(startLine200)
+    startBar = bar_index - len200 + 1
+    if startBar >= 0
+        startLine200 := line.new(startBar, low[len200 - 1], startBar, high[len200 - 1],
+             extend=extend.both, color=COL_SMA200, style=getLineStyle(startLineStyle200Input), width=2)
