@@ -1,84 +1,51 @@
 # Adaptive SMA Trend Tracker
 
-A TradingView Pine Script indicator that displays adaptive Simple Moving Averages (SMAs) with trend-based shading and optional start line markers.
+A Pine Script indicator that provides **higher precision SMAs** than TradingView's standard implementation by calculating on actual intraday timeframes and adapting to real market trading hours.
+
+## Key Features
+
+### 🎯 **Higher Precision**
+- Calculates SMAs using actual intraday bars, not simplified daily approximations
+- Example: 5-day SMA on 5-min chart = 390 bars (6.5h market), not just 5 daily closes
+- Provides true intraday moving average behavior
+
+### 🔄 **Adaptive Calculation**
+- Automatically detects actual market hours (stocks: 6.5h, crypto: 24h, futures: 23h, etc.)
+- Adapts to Regular Trading Hours (RTH) vs Extended Trading Hours (ETH) switches
+- Continuously updates via rolling 10-day window
+
+### 🌍 **Universal Compatibility**
+- Works on any market: Stocks, Crypto, Forex, Futures, Commodities
+- Supports intraday timeframes: 30-second to multi-hour charts
+- Handles holidays, data gaps, and irregular sessions automatically
 
 ## Features
 
-### Adaptive Daily SMAs
-- **5-Day SMA** (Yellow) - Only shown on intraday timeframes
-- **20-Day SMA** (Orange)
-- **50-Day SMA** (Pink)
-- **200-Day SMA** (Red)
+- **Daily SMAs**: 5, 20, 50, 200-day with dynamic shading (bullish/bearish/transition)
+- **Weekly SMAs**: 20, 32, 42-week for weekly charts
+- **Start Lines**: Optional vertical markers showing SMA calculation start points
+- **Adaptive Shading**: Background color indicates trend state relative to 5-day SMA
 
-The indicator automatically adapts to intraday timeframes by calculating the correct number of bars per day, ensuring accurate SMA periods regardless of chart resolution (1min, 5min, 15min, etc.).
+## Requirements
 
-### Weekly SMAs
-When viewing weekly charts, the indicator automatically switches to display:
-- **20-Week SMA** (Orange)
-- **32-Week SMA** (Pink)
-- **42-Week SMA** (Red)
+- Minimum 100 bars of historical data
+- Data spanning at least 3 trading days for accurate calculation
 
-### Trend-Based Shading (5-Day SMA)
-On intraday charts, the area between price and the 5-day SMA is shaded to indicate trend strength:
-- **Green** - Price above 5-day SMA and SMA trending up (bullish)
-- **Red** - Price below 5-day SMA and SMA trending down (bearish)
-- **Yellow** - Transition periods (mixed signals)
+## Behavior
 
-### Start Line Markers
-Visual vertical lines that mark where each SMA calculation begins:
-- **5-Day SMA Start Line** - Enabled by default
-- **50-Day SMA Start Line** - Disabled by default
-- **200-Day SMA Start Line** - Disabled by default
-
-Each start line can be customized with Solid, Dashed, or Dotted styles and uses the matching SMA color.
-
-## Installation
-
-1. Open TradingView
-2. Open the Pine Editor (bottom panel)
-3. Click "New" to create a new indicator
-4. Copy and paste the entire script
-5. Click "Save" and give it a name
-6. Click "Add to Chart"
-
-## Settings
-
-### Start Lines Group
-- **Show 5-Day SMA Start Line** - Toggle visibility (default: ON)
-- **5-Day SMA Start Line Style** - Solid/Dashed/Dotted (default: Dashed)
-- **Show 50-Day SMA Start Line** - Toggle visibility (default: OFF)
-- **50-Day SMA Start Line Style** - Solid/Dashed/Dotted (default: Dashed)
-- **Show 200-Day SMA Start Line** - Toggle visibility (default: OFF)
-- **200-Day SMA Start Line Style** - Solid/Dashed/Dotted (default: Dashed)
-
-## How It Works
-
-### Adaptive Bar Calculation
-The indicator monitors the first 3 complete days on intraday charts to determine the exact number of bars per day. This ensures accurate SMA calculations across different intraday timeframes.
-
-### Timeframe Detection
-- **Intraday**: Shows daily SMAs with adaptive period calculation
-- **Daily**: Shows daily SMAs with standard periods
-- **Weekly**: Automatically switches to weekly SMAs
-
-### Performance Optimization
-- SMAs only displayed when sufficient historical data is available
-- Efficient caching of line objects and calculations
+- First 3 days: Uses theoretical calculation (may be inaccurate)
+- After 3 days: Switches to scanned actual bar counts (accurate)
+- Continuously adapts: Rolling window tracks most recent trading patterns
+- Adaptive repainting: Historical values update when session settings change
 
 ## Technical Details
 
-- **Pine Script Version**: v6
-- **Overlay**: Yes (draws on the price chart)
-- **Max Bars Back**: 5000
+- **Algorithm**: Rolling window (10 days) with mode-based bar count detection
+- **Performance**: O(1) per bar, minimal memory footprint
+- **Validation**: Filters holidays, data gaps (5-1,200 bars/day range)
+- **Precision**: True intraday calculation vs approximate daily-based SMAs
 
-## License
+---
 
-MIT License - See file header for full license text
-
-## Contributing
-
-Contributions, issues, and feature requests are welcome!
-
-## Author
-
-Copyright (c) 2024
+**License**: MIT  
+**Version**: Pine Script v6

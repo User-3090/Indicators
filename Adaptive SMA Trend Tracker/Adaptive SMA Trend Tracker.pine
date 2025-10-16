@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2024
+// Copyright (c) 2024 User-3090
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,9 +27,13 @@ indicator("Adaptive SMA Trend Tracker", overlay=true)
 // CONSTANTS & CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const int MAX_BARS = 5000
-const int DAYS_TO_LOCK = 3
-const int SECONDS_PER_DAY = 86400
+const int MAX_BARS          = 5000
+const int SCAN_WINDOW       = 10    // Rolling window: keep last N days
+const int MIN_DAYS_FOR_SCAN = 3     // Minimum days needed before using scanned data
+const int MIN_BARS_TOTAL    = 100   // Minimum bars needed to start scanning
+const int MIN_BARS_PER_DAY  = 5     // Minimum reasonable bars per day (filters holidays/bad data)
+const int MAX_BARS_PER_DAY  = 1200  // Maximum bars per day (consistent with MAX_BARS, allows ~20-30s timeframes)
+const int SECONDS_PER_DAY   = 86400
 
 max_bars_back(close, MAX_BARS)
 
@@ -45,8 +49,8 @@ const color COL_SMA32W = #d62060  // Pink - 32-week
 const color COL_SMA42W = #e43b38  // Red - 42-week
 
 // Shading Colors
-const color COL_SHADE_BULLISH = color.new(#81ce6f, 90)   // Green
-const color COL_SHADE_BEARISH = color.new(#e43b38, 90)   // Red
+const color COL_SHADE_BULLISH    = color.new(#81ce6f, 90) // Green
+const color COL_SHADE_BEARISH    = color.new(#e43b38, 90) // Red
 const color COL_SHADE_TRANSITION = color.new(#fbbe30, 90) // Yellow
 
 // Inputs
@@ -63,21 +67,59 @@ startLineStyle200Input = input.string("Dashed", "Style",
      options=["Solid", "Dashed", "Dotted"], inline="200", group="Start Lines")
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BARS PER DAY CALCULATION
+// ADAPTIVE BARS PER DAY CALCULATION (INTRADAY ONLY)
 // ═══════════════════════════════════════════════════════════════════════════════
-
+//
+// This indicator automatically adapts to actual market trading hours by:
+// 1. Scanning the last 10 trading days to count bars per day
+// 2. Using the most common (mode) bar count as the standard
+// 3. Continuously updating via a rolling window to adapt to session changes
+//
+// FEATURES:
+// - Adapts to any market: Stocks (6.5h), Crypto (24h), Forex, Futures
+// - Handles RTH/ETH switches: Automatically detects new session lengths
+// - Filters holidays and data gaps: Only counts valid trading days
+// - Works on practical timeframes: 30-second to multi-hour charts (intraday)
+//
+// REQUIREMENTS:
+// - Minimum 100 bars of historical data
+// - Data must span at least 3 trading days for accurate calculation
+// - Intraday timeframes only (daily/weekly handled separately)
+//
+// BEHAVIOR:
+// - Initial bars use theoretical calculation (may be inaccurate)
+// - After 3 days, switches to actual scanned bar counts
+// - Values continuously adapt as new days are added (rolling window)
+// - Historical values may recalculate when session settings change (adaptive repainting)
 isWeekly = timeframe.isweekly
-var float barsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_DAY / timeframe.in_seconds()) : 1.0
-var int dayStartBar = na
-var int validDays = 0
 
-if timeframe.change("D") and barstate.isconfirmed and not isWeekly
-    if not na(dayStartBar) and validDays < DAYS_TO_LOCK
-        int actualBars = bar_index - dayStartBar
-        if actualBars > 0
-            barsPerDay := actualBars
-            validDays += 1
+// Theoretical bars per day as initial fallback (inaccurate for markets with limited hours, but gets replaced)
+float theoreticalBarsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_DAY / timeframe.in_seconds()) : 1.0
+var float barsPerDay = theoreticalBarsPerDay
+var array<int> barCountsPerDay = array.new<int>()
+var int dayStartBar = na
+
+// Conservative check - just need minimum bars to start scanning
+bool hasEnoughData = bar_index >= MIN_BARS_TOTAL
+
+// Continuously scan trading days: adapts to RTH/ETH switches, market hour changes, and instrument changes
+if timeframe.change("D") and barstate.isconfirmed and not isWeekly and hasEnoughData
+    if not na(dayStartBar)
+        int barsInDay = bar_index - dayStartBar
+
+        // Only count valid trading days: filters holidays (0 bars), data gaps, and corrupt/outlier data
+        if barsInDay >= MIN_BARS_PER_DAY and barsInDay <= MAX_BARS_PER_DAY
+            array.push(barCountsPerDay, barsInDay)
+
+            // Maintain rolling window: keep only last SCAN_WINDOW days for continuous adaptation
+            if array.size(barCountsPerDay) > SCAN_WINDOW
+                array.shift(barCountsPerDay)
+
     dayStartBar := bar_index
+
+    // Update barsPerDay with mode (most common bar count) whenever we have enough samples
+    if array.size(barCountsPerDay) >= MIN_DAYS_FOR_SCAN
+        barsPerDay := array.mode(barCountsPerDay)
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SMA CALCULATIONS
@@ -127,9 +169,9 @@ show20  = not isWeekly and canShow20 and bar_index >= len20 - 1
 show50  = not isWeekly and canShow50 and bar_index >= len50 - 1
 show200 = not isWeekly and canShow200 and bar_index >= len200 - 1
 
-p5 = plot(show5 ? sma5 : na, "5-Day SMA", COL_SMA5, 2)
-plot(show20 ? sma20 : na, "20-Day SMA", COL_SMA20, 2)
-p50 = plot(show50 ? sma50 : na, "50-Day SMA", COL_SMA50, 2)
+p5   = plot(show5 ? sma5 : na, "5-Day SMA", COL_SMA5, 2)
+p20  = plot(show20 ? sma20 : na, "20-Day SMA", COL_SMA20, 2)
+p50  = plot(show50 ? sma50 : na, "50-Day SMA", COL_SMA50, 2)
 p200 = plot(show200 ? sma200 : na, "200-Day SMA", COL_SMA200, 2)
 
 // ═══════════════════════════════════════════════════════════════════════════════
