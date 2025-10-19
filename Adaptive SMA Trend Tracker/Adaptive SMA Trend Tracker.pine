@@ -30,10 +30,10 @@ indicator("Adaptive SMA Trend Tracker", overlay=true)
 const int MAX_BARS          = 5000
 const int SCAN_WINDOW       = 10    // Rolling window: keep last N days
 const int MIN_DAYS_FOR_SCAN = 3     // Minimum days needed before using scanned data
-const int MIN_BARS_TOTAL    = 100   // Minimum bars needed to start scanning
-const int MIN_BARS_PER_DAY  = 5     // Minimum reasonable bars per day (filters holidays/bad data)
+const int MIN_BARS_TOTAL    = 20    // Minimum bars to start scanning (works quickly on all timeframes)
+const int MIN_BARS_PER_DAY  = 1     // Minimum bars per day (filters holidays, allows multi-hour timeframes)
 const int MAX_BARS_PER_DAY  = 1200  // Maximum bars per day (consistent with MAX_BARS, allows ~20-30s timeframes)
-const int SECONDS_PER_DAY   = 86400
+const int SECONDS_PER_STOCK_DAY = 23400  // 6.5 hours (typical stock market RTH)
 
 max_bars_back(close, MAX_BARS)
 
@@ -54,6 +54,7 @@ const color COL_SHADE_BEARISH    = color.new(#e43b38, 90) // Red
 const color COL_SHADE_TRANSITION = color.new(#fbbe30, 90) // Yellow
 
 // Inputs
+// Start Lines
 show5StartLineInput = input.bool(true, "Show 5-Day", inline="5", group="Start Lines")
 startLineStyle5Input = input.string("Dashed", "Style",
      options=["Solid", "Dashed", "Dotted"], inline="5", group="Start Lines")
@@ -66,58 +67,48 @@ show200StartLineInput = input.bool(false, "Show 200-Day", inline="200", group="S
 startLineStyle200Input = input.string("Dashed", "Style",
      options=["Solid", "Dashed", "Dotted"], inline="200", group="Start Lines")
 
+// ATR Display
+showATR = input.bool(true, "Show ATR", group="ATR Display")
+atrPeriod = input.int(20, "ATR Period", minval=1, maxval=500, group="ATR Display")
+positionSize = input.float(0, "Position Size ($)", minval=0, step=100, group="ATR Display", tooltip="For stocks/forex: dollar position size")
+futuresContracts = input.float(0, "Contracts/Lots", minval=0, step=1, group="ATR Display", tooltip="For futures: number of contracts (auto-detected)")
+atrPosition = input.string("Top Left", "Position",
+     options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
+     group="ATR Display")
+atrBgColor = input.color(color.gray, "Background Color", group="ATR Display")
+atrTextColor = input.color(color.white, "Text Color", group="ATR Display")
+atrTextSize = input.string("Normal", "Text Size",
+     options=["Auto", "Tiny", "Small", "Normal", "Large", "Huge"],
+     group="ATR Display")
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// ADAPTIVE BARS PER DAY CALCULATION (INTRADAY ONLY)
+// ADAPTIVE BARS PER DAY CALCULATION
 // ═══════════════════════════════════════════════════════════════════════════════
-//
-// This indicator automatically adapts to actual market trading hours by:
-// 1. Scanning the last 10 trading days to count bars per day
-// 2. Using the most common (mode) bar count as the standard
-// 3. Continuously updating via a rolling window to adapt to session changes
-//
-// FEATURES:
-// - Adapts to any market: Stocks (6.5h), Crypto (24h), Forex, Futures
-// - Handles RTH/ETH switches: Automatically detects new session lengths
-// - Filters holidays and data gaps: Only counts valid trading days
-// - Works on practical timeframes: 30-second to multi-hour charts (intraday)
-//
-// REQUIREMENTS:
-// - Minimum 100 bars of historical data
-// - Data must span at least 3 trading days for accurate calculation
-// - Intraday timeframes only (daily/weekly handled separately)
-//
-// BEHAVIOR:
-// - Initial bars use theoretical calculation (may be inaccurate)
-// - After 3 days, switches to actual scanned bar counts
-// - Values continuously adapt as new days are added (rolling window)
-// - Historical values may recalculate when session settings change (adaptive repainting)
 isWeekly = timeframe.isweekly
 
-// Theoretical bars per day as initial fallback (inaccurate for markets with limited hours, but gets replaced)
-float theoreticalBarsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_DAY / timeframe.in_seconds()) : 1.0
+// Initial fallback: theoretical calculation (assumes 6.5h stock market, gets replaced after 3 days)
+float theoreticalBarsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_STOCK_DAY / timeframe.in_seconds()) : 1.0
 var float barsPerDay = theoreticalBarsPerDay
 var array<int> barCountsPerDay = array.new<int>()
 var int dayStartBar = na
-
-// Conservative check - just need minimum bars to start scanning
 bool hasEnoughData = bar_index >= MIN_BARS_TOTAL
 
-// Continuously scan trading days: adapts to RTH/ETH switches, market hour changes, and instrument changes
+// Scan trading days and adapt to session changes
 if timeframe.change("D") and barstate.isconfirmed and not isWeekly and hasEnoughData
     if not na(dayStartBar)
         int barsInDay = bar_index - dayStartBar
 
-        // Only count valid trading days: filters holidays (0 bars), data gaps, and corrupt/outlier data
+        // Filter holidays, data gaps, corrupt data
         if barsInDay >= MIN_BARS_PER_DAY and barsInDay <= MAX_BARS_PER_DAY
             array.push(barCountsPerDay, barsInDay)
 
-            // Maintain rolling window: keep only last SCAN_WINDOW days for continuous adaptation
+            // Maintain rolling window
             if array.size(barCountsPerDay) > SCAN_WINDOW
                 array.shift(barCountsPerDay)
 
     dayStartBar := bar_index
 
-    // Update barsPerDay with mode (most common bar count) whenever we have enough samples
+    // Use mode of last N days
     if array.size(barCountsPerDay) >= MIN_DAYS_FOR_SCAN
         barsPerDay := array.mode(barCountsPerDay)
 
@@ -125,7 +116,7 @@ if timeframe.change("D") and barstate.isconfirmed and not isWeekly and hasEnough
 // SMA CALCULATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Daily SMA periods and validation
+// Calculate SMA periods based on actual bars per day
 len5   = int(5 * barsPerDay)
 len20  = int(20 * barsPerDay)
 len50  = int(50 * barsPerDay)
@@ -136,16 +127,27 @@ canShow20  = len20 <= MAX_BARS
 canShow50  = len50 <= MAX_BARS
 canShow200 = len200 <= MAX_BARS
 
-// Compute SMAs (clamped to max bars)
 sma5   = ta.sma(close, math.min(len5, MAX_BARS))
 sma20  = ta.sma(close, math.min(len20, MAX_BARS))
 sma50  = ta.sma(close, math.min(len50, MAX_BARS))
 sma200 = ta.sma(close, math.min(len200, MAX_BARS))
 
-// Weekly SMAs (simple periods)
 sma20w = ta.sma(close, 20)
 sma32w = ta.sma(close, 32)
 sma42w = ta.sma(close, 42)
+
+// ATR calculation (configurable period)
+atrValue = ta.atr(atrPeriod)
+atrPercent = not na(atrValue) and close > 0 ? (atrValue / close) * 100 : 0
+
+// Calculate dollar value - auto-detect futures vs stocks
+atrDollarValue = 0.0
+isFutures = syminfo.type == "futures"
+
+if isFutures and futuresContracts > 0
+    atrDollarValue := futuresContracts * syminfo.pointvalue * atrValue
+else if not isFutures and positionSize > 0
+    atrDollarValue := (atrValue / close) * positionSize
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHADING LOGIC
@@ -189,7 +191,6 @@ plot(isWeekly and bar_index >= 41 ? sma42w : na, "42-Week SMA", COL_SMA42W, 2)
 pClose = plot(close, display=display.none, editable=false)
 fill(pClose, p5, smaColor, title="5-Day SMA Shading")
 
-// Start lines
 getLineStyle(s) => s == "Solid" ? line.style_solid : s == "Dotted" ? line.style_dotted : line.style_dashed
 
 var line startLine5 = na
@@ -212,3 +213,30 @@ if barstate.islast and show200 and show200StartLineInput and na(startLine200)
     if startBar >= 0
         startLine200 := line.new(startBar, low[len200 - 1], startBar, high[len200 - 1],
              extend=extend.both, color=COL_SMA200, style=getLineStyle(startLineStyle200Input), width=2)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATR DISPLAY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+if showATR and barstate.islast and not isWeekly and canShow20
+    pos = atrPosition == "Top Left" ? position.top_left :
+          atrPosition == "Top Right" ? position.top_right :
+          atrPosition == "Bottom Left" ? position.bottom_left :
+          position.bottom_right
+
+    txtSize = atrTextSize == "Auto" ? size.auto :
+              atrTextSize == "Tiny" ? size.tiny :
+              atrTextSize == "Small" ? size.small :
+              atrTextSize == "Normal" ? size.normal :
+              atrTextSize == "Large" ? size.large :
+              size.huge
+
+    var table atrTable = table.new(pos, 1, 1, frame_width = 1, frame_color = color.gray)
+
+    table.clear(atrTable, 0, 0, 0, 0)
+
+    atrText = "ATR(" + str.tostring(atrPeriod) + "): " + str.tostring(atrPercent, "#.##") + "%"
+    if atrDollarValue > 0
+        atrText := atrText + " | " + str.tostring(atrDollarValue, "#,###.##") + " " + syminfo.currency
+
+    table.cell(atrTable, 0, 0, atrText, text_color = atrTextColor, bgcolor = atrBgColor, text_size = txtSize)
