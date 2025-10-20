@@ -33,7 +33,9 @@ const int MIN_DAYS_FOR_SCAN = 3     // Minimum days needed before using scanned 
 const int MIN_BARS_TOTAL    = 20    // Minimum bars to start scanning (works quickly on all timeframes)
 const int MIN_BARS_PER_DAY  = 1     // Minimum bars per day (filters holidays, allows multi-hour timeframes)
 const int MAX_BARS_PER_DAY  = 1200  // Maximum bars per day (consistent with MAX_BARS, allows ~20-30s timeframes)
-const int SECONDS_PER_STOCK_DAY = 23400  // 6.5 hours (typical stock market RTH)
+const int SECONDS_STOCK_DAY = 23400   // 6.5 hours (stock market RTH)
+const int SECONDS_FUTURES_DAY = 82800 // 23 hours (typical futures trading)
+const int SECONDS_CRYPTO_DAY = 86400  // 24 hours (crypto trading)
 
 max_bars_back(close, MAX_BARS)
 
@@ -86,8 +88,9 @@ atrTextSize = input.string("Normal", "Text Size",
 // ═══════════════════════════════════════════════════════════════════════════════
 isWeekly = timeframe.isweekly
 
-// Initial fallback: theoretical calculation (assumes 6.5h stock market, gets replaced after 3 days)
-float theoreticalBarsPerDay = timeframe.isintraday ? math.round(SECONDS_PER_STOCK_DAY / timeframe.in_seconds()) : 1.0
+// Initial fallback: detect instrument type and use appropriate hours
+int theoreticalSeconds = syminfo.type == "futures" ? SECONDS_FUTURES_DAY : syminfo.type == "crypto" ? SECONDS_CRYPTO_DAY : SECONDS_STOCK_DAY
+float theoreticalBarsPerDay = timeframe.isintraday ? math.round(theoreticalSeconds / timeframe.in_seconds()) : 1.0
 var float barsPerDay = theoreticalBarsPerDay
 var array<int> barCountsPerDay = array.new<int>()
 var int dayStartBar = na
