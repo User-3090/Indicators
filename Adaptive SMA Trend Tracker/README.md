@@ -11,7 +11,7 @@ Standard TradingView SMAs on intraday charts use daily closes (5 data points for
 Automatically detects actual trading hours and adapts when you switch between Regular Trading Hours (RTH) and Extended Trading Hours (ETH). No manual configuration needed.
 
 ### 💰 **Integrated Risk Calculator**
-Built-in ATR display with position sizing - shows your dollar risk for stocks or per-contract risk for futures. Auto-detects instrument type.
+Built-in ATR display with position sizing - shows your dollar risk for stocks or per-contract risk for futures. ATR calculated from daily timeframe for consistency across all chart timeframes. Auto-detects instrument type.
 
 ## Features
 
@@ -22,7 +22,9 @@ Built-in ATR display with position sizing - shows your dollar risk for stocks or
 - **Start Lines**: Optional markers showing where SMA calculation begins
 
 ### ATR Risk Display
-- **Configurable Period**: Adjust ATR period (1-500 bars, default: 20)
+- **Daily-Based Calculation**: ATR calculated from daily timeframe using Wilder's method
+- **Consistent Across Timeframes**: Shows same ATR value on 5-min, 1-hour, or any chart timeframe
+- **Configurable Period**: Adjust ATR period (1-500 days, default: 20)
 - **Position Sizing**:
   - **Stocks/Forex**: Enter dollar position size → see risk in currency
   - **Futures**: Enter contracts/lots → auto-calculates using contract specifications
@@ -88,17 +90,25 @@ Continuously adapts via rolling 10-day window to track session changes.
 
 ## Technical Notes
 
-### Algorithm
+### SMA Algorithm
 - Scans using `timeframe.change("D")` to detect day boundaries
 - Uses statistical mode of bar counts (most common session length)
 - Filters outliers: 1-1,200 bars/day range (catches holidays and corrupt data)
 - Efficient: O(1) per bar, minimal memory footprint
 
+### ATR Calculation
+- Uses `request.security()` to fetch ATR from daily timeframe
+- Implements Wilder's RMA smoothing method (industry standard)
+- Consistent across all chart timeframes (5-min shows same value as 1-hour)
+- Requires minimum 20+ daily bars for ATR(20) initialization
+
 ### Why ATR Not ADR?
 ATR (Average True Range) accounts for price gaps between sessions, making it superior for risk management. ADR (Average Daily Range) only measures high-low spread and misses overnight/weekend gaps.
 
-### Pine Script Limitations
-The adaptive calculation must run in the current chart's timeframe context. Pine Script's higher-timeframe data requests cannot maintain the stateful logic required for bar counting across multiple days.
+### Design Decisions
+- **SMAs**: Adaptive calculation runs in current chart's timeframe for true intraday precision
+- **ATR**: Calculated from daily timeframe via `request.security()` for consistency and proper Wilder's smoothing
+- This hybrid approach provides both intraday precision (SMAs) and cross-timeframe consistency (ATR)
 
 ---
 
