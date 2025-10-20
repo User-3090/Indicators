@@ -136,8 +136,12 @@ sma20w = ta.sma(close, 20)
 sma32w = ta.sma(close, 32)
 sma42w = ta.sma(close, 42)
 
-// ATR calculation (configurable period)
-atrValue = ta.atr(atrPeriod)
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATR CALCULATION (from daily timeframe for consistency across all chart timeframes)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Request ATR from daily timeframe (consistent regardless of chart timeframe)
+atrValue = request.security(syminfo.tickerid, "D", ta.atr(atrPeriod))
 atrPercent = not na(atrValue) and close > 0 ? (atrValue / close) * 100 : 0
 
 // Calculate dollar value - auto-detect futures vs stocks
