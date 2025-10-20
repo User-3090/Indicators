@@ -223,7 +223,7 @@ if barstate.islast and show200 and show200StartLineInput and na(startLine200)
 // ATR DISPLAY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-if showATR and barstate.islast and not isWeekly and canShow20
+if showATR and barstate.islast
     pos = atrPosition == "Top Left" ? position.top_left :
           atrPosition == "Top Right" ? position.top_right :
           atrPosition == "Bottom Left" ? position.bottom_left :
