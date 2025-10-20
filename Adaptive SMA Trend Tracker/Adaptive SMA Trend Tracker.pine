@@ -122,15 +122,16 @@ len20  = int(20 * barsPerDay)
 len50  = int(50 * barsPerDay)
 len200 = int(200 * barsPerDay)
 
-canShow5   = len5 <= MAX_BARS
-canShow20  = len20 <= MAX_BARS
-canShow50  = len50 <= MAX_BARS
-canShow200 = len200 <= MAX_BARS
+canShow5   = len5 > 0 and len5 <= MAX_BARS
+canShow20  = len20 > 0 and len20 <= MAX_BARS
+canShow50  = len50 > 0 and len50 <= MAX_BARS
+canShow200 = len200 > 0 and len200 <= MAX_BARS
 
-sma5   = ta.sma(close, math.min(len5, MAX_BARS))
-sma20  = ta.sma(close, math.min(len20, MAX_BARS))
-sma50  = ta.sma(close, math.min(len50, MAX_BARS))
-sma200 = ta.sma(close, math.min(len200, MAX_BARS))
+// Calculate SMAs unconditionally (Pine Script requirement), use guards for display
+sma5   = ta.sma(close, canShow5 ? math.min(len5, MAX_BARS) : 1)
+sma20  = ta.sma(close, canShow20 ? math.min(len20, MAX_BARS) : 1)
+sma50  = ta.sma(close, canShow50 ? math.min(len50, MAX_BARS) : 1)
+sma200 = ta.sma(close, canShow200 ? math.min(len200, MAX_BARS) : 1)
 
 sma20w = ta.sma(close, 20)
 sma32w = ta.sma(close, 32)
