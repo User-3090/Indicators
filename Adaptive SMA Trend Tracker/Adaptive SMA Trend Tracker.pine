@@ -48,7 +48,7 @@ const color COL_SMA200 = #e43b38  // Red - 200-day
 
 // SMA Colors - Weekly (default to match 20-day, 50-day, 200-day)
 const color COL_SMA20W = #f47b00  // Orange - 20-week
-const color COL_SMA32W = #d62060  // Pink - 32-week
+const color COL_SMA31W = #d62060  // Pink - 31-week
 const color COL_SMA42W = #e43b38  // Red - 42-week
 
 // Shading Colors
@@ -71,7 +71,7 @@ startLineStyle200Input = input.string("Dashed", "Style",
      options=["Solid", "Dashed", "Dotted"], inline="200", group="Start Lines")
 
 // Info Bar Display
-showInfoBar = input.bool(true, "Show Info Bar", group="Info Bar")
+showInfoBar = input.bool(false, "Show Info Bar", group="Info Bar")
 infoBarPosition = input.string("Top Right", "Position",
      options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
      group="Info Bar")
@@ -84,7 +84,7 @@ infoBarTextSize = input.string("Normal", "Text Size",
 // ATR Settings
 showATR = input.bool(true, "Show ATR", group="ATR Settings")
 atrPeriod = input.int(20, "ATR Period (Days)", minval=1, maxval=500, group="ATR Settings", tooltip="Number of days used to calculate Average True Range")
-riskAmount = input.float(1000, "ATR Position Size", minval=0, step=100, group="ATR Settings", tooltip="Currency value of 1 ATR price move (up or down). Calculates shares/lots based on volatility.")
+riskAmount = input.float(2000, "ATR Position Size", minval=0, step=100, group="ATR Settings", tooltip="Currency value of 1 ATR price move (up or down). Calculates shares/lots based on volatility.")
 
 // Earnings Settings
 showEarnings = input.bool(false, "Show Last Earnings", group="Earnings Settings", tooltip="Display days since last earnings report (stocks only)")
@@ -146,7 +146,7 @@ sma50  = ta.sma(close, canShow50 ? math.min(len50, MAX_BARS) : 1)
 sma200 = ta.sma(close, canShow200 ? math.min(len200, MAX_BARS) : 1)
 
 sma20w = ta.sma(close, 20)
-sma32w = ta.sma(close, 32)
+sma31w = ta.sma(close, 31)
 sma42w = ta.sma(close, 42)
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -231,7 +231,7 @@ p200 = plot(show200 ? sma200 : na, "200-Day SMA", COL_SMA200, 2)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 plot(isWeekly and bar_index >= 19 ? sma20w : na, "20-Week SMA", COL_SMA20W, 2)
-plot(isWeekly and bar_index >= 31 ? sma32w : na, "32-Week SMA", COL_SMA32W, 2)
+plot(isWeekly and bar_index >= 30 ? sma31w : na, "31-Week SMA", COL_SMA31W, 2)
 plot(isWeekly and bar_index >= 41 ? sma42w : na, "42-Week SMA", COL_SMA42W, 2)
 
 // ═══════════════════════════════════════════════════════════════════════════════
