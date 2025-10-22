@@ -27,15 +27,16 @@ indicator("Adaptive SMA Trend Tracker", overlay=true)
 // CONSTANTS & CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const int MAX_BARS          = 5000
-const int SCAN_WINDOW       = 10    // Rolling window: keep last N days
-const int MIN_DAYS_FOR_SCAN = 3     // Minimum days needed before using scanned data
-const int MIN_BARS_TOTAL    = 20    // Minimum bars to start scanning (works quickly on all timeframes)
-const int MIN_BARS_PER_DAY  = 1     // Minimum bars per day (filters holidays, allows multi-hour timeframes)
-const int MAX_BARS_PER_DAY  = 1200  // Maximum bars per day (consistent with MAX_BARS, allows ~20-30s timeframes)
-const int SECONDS_STOCK_DAY = 23400   // 6.5 hours (stock market RTH)
+const int MAX_BARS            = 5000
+const int SCAN_WINDOW         = 10    // Rolling window: keep last N days
+const int MIN_DAYS_FOR_SCAN   = 2     // Minimum days needed before using scanned data
+const int MIN_BARS_TOTAL      = 6     // Minimum bars to start scanning (works on 4-hour+ timeframes)
+const int MIN_BARS_PER_DAY    = 1     // Minimum bars per day (filters holidays, allows multi-hour timeframes)
+const int MAX_BARS_PER_DAY    = 3000  // Maximum bars per day (supports 30-second charts on 24h markets)
+const int SECONDS_STOCK_DAY   = 23400 // 6.5 hours (stock market RTH)
+const int SECONDS_FOREX_DAY   = 86400 // 24 hours (forex trading, 5 days/week)
 const int SECONDS_FUTURES_DAY = 82800 // 23 hours (typical futures trading)
-const int SECONDS_CRYPTO_DAY = 86400  // 24 hours (crypto trading)
+const int SECONDS_CRYPTO_DAY  = 86400 // 24 hours (crypto trading)
 
 max_bars_back(close, MAX_BARS)
 
@@ -69,19 +70,24 @@ show200StartLineInput = input.bool(false, "Show 200-Day", inline="200", group="S
 startLineStyle200Input = input.string("Dashed", "Style",
      options=["Solid", "Dashed", "Dotted"], inline="200", group="Start Lines")
 
-// ATR Display
-showATR = input.bool(true, "Show ATR", group="ATR Display")
-atrPeriod = input.int(20, "ATR Period", minval=1, maxval=500, group="ATR Display")
-positionSize = input.float(0, "Position Size ($)", minval=0, step=100, group="ATR Display", tooltip="For stocks/forex: dollar position size")
-futuresContracts = input.float(0, "Contracts/Lots", minval=0, step=1, group="ATR Display", tooltip="For futures: number of contracts (auto-detected)")
-atrPosition = input.string("Top Left", "Position",
+// Info Bar Display
+showInfoBar = input.bool(true, "Show Info Bar", group="Info Bar")
+infoBarPosition = input.string("Top Right", "Position",
      options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
-     group="ATR Display")
-atrBgColor = input.color(color.gray, "Background Color", group="ATR Display")
-atrTextColor = input.color(color.white, "Text Color", group="ATR Display")
-atrTextSize = input.string("Normal", "Text Size",
+     group="Info Bar")
+infoBarBgColor = input.color(color.gray, "Background Color", group="Info Bar")
+infoBarTextColor = input.color(color.white, "Text Color", group="Info Bar")
+infoBarTextSize = input.string("Normal", "Text Size",
      options=["Auto", "Tiny", "Small", "Normal", "Large", "Huge"],
-     group="ATR Display")
+     group="Info Bar")
+
+// ATR Settings
+showATR = input.bool(true, "Show ATR", group="ATR Settings")
+atrPeriod = input.int(20, "ATR Period (Days)", minval=1, maxval=500, group="ATR Settings", tooltip="Number of days used to calculate Average True Range")
+riskAmount = input.float(1000, "ATR Position Size", minval=0, step=100, group="ATR Settings", tooltip="Currency value of 1 ATR price move (up or down). Calculates shares/lots based on volatility.")
+
+// Earnings Settings
+showEarnings = input.bool(false, "Show Last Earnings", group="Earnings Settings", tooltip="Display days since last earnings report (stocks only)")
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADAPTIVE BARS PER DAY CALCULATION
@@ -89,7 +95,10 @@ atrTextSize = input.string("Normal", "Text Size",
 isWeekly = timeframe.isweekly
 
 // Initial fallback: detect instrument type and use appropriate hours
-int theoreticalSeconds = syminfo.type == "futures" ? SECONDS_FUTURES_DAY : syminfo.type == "crypto" ? SECONDS_CRYPTO_DAY : SECONDS_STOCK_DAY
+int theoreticalSeconds = syminfo.type == "futures" ? SECONDS_FUTURES_DAY :
+     syminfo.type == "crypto" ? SECONDS_CRYPTO_DAY :
+     syminfo.type == "forex" ? SECONDS_FOREX_DAY :
+     SECONDS_STOCK_DAY
 float theoreticalBarsPerDay = timeframe.isintraday ? math.round(theoreticalSeconds / timeframe.in_seconds()) : 1.0
 var float barsPerDay = theoreticalBarsPerDay
 var array<int> barCountsPerDay = array.new<int>()
@@ -141,21 +150,54 @@ sma32w = ta.sma(close, 32)
 sma42w = ta.sma(close, 42)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ATR CALCULATION (from daily timeframe for consistency across all chart timeframes)
+// ATR & POSITION SIZE CALCULATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Request ATR from daily timeframe (consistent regardless of chart timeframe)
+// Currency symbol formatter
+getCurrencySymbol(string curr) =>
+    string _result = curr == "USD" ? "$" :
+         curr == "EUR" ? "€" :
+         curr == "GBP" ? "£" :
+         curr == "JPY" ? "¥" :
+         curr == "CNY" ? "¥" :
+         curr == "CHF" ? "CHF " :
+         curr == "AUD" ? "A$" :
+         curr == "CAD" ? "C$" :
+         curr == "NZD" ? "NZ$" :
+         curr == "HKD" ? "HK$" :
+         curr == "SGD" ? "S$" :
+         curr == "KRW" ? "₩" :
+         curr == "INR" ? "₹" :
+         curr == "RUB" ? "₽" :
+         curr == "BRL" ? "R$" :
+         curr == "ZAR" ? "R" :
+         curr == "TRY" ? "₺" :
+         curr + " "
+    _result
+
 atrValue = request.security(syminfo.tickerid, "D", ta.atr(atrPeriod))
-atrPercent = not na(atrValue) and close > 0 ? (atrValue / close) * 100 : 0
+atrPercent = not na(atrValue) and atrValue > 0 and close > 0 ? (atrValue / close) * 100 : 0
 
-// Calculate dollar value - auto-detect futures vs stocks
-atrDollarValue = 0.0
+// Earnings calculation (stocks only) - must be at root scope for consistency
+isStock = syminfo.type == "stock"
+earningsActual = isStock ? request.earnings(syminfo.tickerid, earnings.actual, barmerge.gaps_on, ignore_invalid_symbol=true) : na
+barsSinceEarnings = ta.barssince(not na(earningsActual))
+daysSinceEarnings = showEarnings and isStock and not na(barsSinceEarnings) ? int(barsSinceEarnings) : 0
+
 isFutures = syminfo.type == "futures"
+calculatedShares = 0.0
+calculatedLots = 0.0
+capitalAmount = 0.0
 
-if isFutures and futuresContracts > 0
-    atrDollarValue := futuresContracts * syminfo.pointvalue * atrValue
-else if not isFutures and positionSize > 0
-    atrDollarValue := (atrValue / close) * positionSize
+if riskAmount > 0 and not na(atrValue) and atrValue > 0
+    if isFutures and not na(syminfo.pointvalue) and syminfo.pointvalue > 0
+        calculatedLots := riskAmount / (atrValue * syminfo.pointvalue)
+        // Notional value for futures = lots × price × point value
+        capitalAmount := calculatedLots * close * syminfo.pointvalue
+    else if not isFutures
+        calculatedShares := riskAmount / atrValue
+        // Capital for stocks = shares × price
+        capitalAmount := calculatedShares * close
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHADING LOGIC
@@ -223,28 +265,53 @@ if barstate.islast and show200 and show200StartLineInput and na(startLine200)
              extend=extend.both, color=COL_SMA200, style=getLineStyle(startLineStyle200Input), width=2)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ATR DISPLAY
+// INFO BAR DISPLAY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-if showATR and barstate.islast
-    pos = atrPosition == "Top Left" ? position.top_left :
-          atrPosition == "Top Right" ? position.top_right :
-          atrPosition == "Bottom Left" ? position.bottom_left :
+if showInfoBar and barstate.islast
+    pos = infoBarPosition == "Top Left" ? position.top_left :
+          infoBarPosition == "Top Right" ? position.top_right :
+          infoBarPosition == "Bottom Left" ? position.bottom_left :
           position.bottom_right
 
-    txtSize = atrTextSize == "Auto" ? size.auto :
-              atrTextSize == "Tiny" ? size.tiny :
-              atrTextSize == "Small" ? size.small :
-              atrTextSize == "Normal" ? size.normal :
-              atrTextSize == "Large" ? size.large :
+    txtSize = infoBarTextSize == "Auto" ? size.auto :
+              infoBarTextSize == "Tiny" ? size.tiny :
+              infoBarTextSize == "Small" ? size.small :
+              infoBarTextSize == "Normal" ? size.normal :
+              infoBarTextSize == "Large" ? size.large :
               size.huge
 
-    var table atrTable = table.new(pos, 1, 1, frame_width = 1, frame_color = color.gray)
+    var table infoTable = table.new(pos, 1, 1, frame_width = 1, frame_color = color.gray)
 
-    table.clear(atrTable, 0, 0, 0, 0)
+    table.clear(infoTable, 0, 0, 0, 0)
 
-    atrText = "ATR(" + str.tostring(atrPeriod) + "): " + str.tostring(atrPercent, "#.##") + "%"
-    if atrDollarValue > 0
-        atrText := atrText + " | " + str.tostring(atrDollarValue, "#,###.##") + " " + syminfo.currency
+    // Build single line text
+    string infoText = ""
 
-    table.cell(atrTable, 0, 0, atrText, text_color = atrTextColor, bgcolor = atrBgColor, text_size = txtSize)
+    // Add ATR info
+    if showATR
+        string atrText = not na(atrValue) and atrValue > 0 ?
+             "ATR(" + str.tostring(atrPeriod) + "): " + str.tostring(atrPercent, "0.0") + "%" :
+             "ATR(" + str.tostring(atrPeriod) + "): N/A"
+
+        if riskAmount > 0 and not na(atrValue) and atrValue > 0
+            currSymbol = getCurrencySymbol(syminfo.currency)
+            positionText = isFutures and calculatedLots > 0 ?
+                 str.tostring(calculatedLots, "0.0") + " lots (" + currSymbol + str.tostring(capitalAmount, "#,###") + ")" :
+                 not isFutures and calculatedShares > 0 ?
+                 str.tostring(math.round(calculatedShares), "#,###") + " shares (" + currSymbol + str.tostring(capitalAmount, "#,###") + ")" :
+                 "N/A"
+            atrText := atrText + " | 1 ATR = " + currSymbol + str.tostring(riskAmount, "#,###") + " → " + positionText
+
+        infoText := atrText
+
+    // Append earnings info
+    if showEarnings and isStock
+        string earningsText = daysSinceEarnings > 0 ?
+             "Last Earnings: " + str.tostring(daysSinceEarnings) + " days ago" :
+             "Last Earnings: N/A"
+        infoText := infoText == "" ? earningsText : infoText + " | " + earningsText
+
+    // Display single row
+    if infoText != ""
+        table.cell(infoTable, 0, 0, infoText, text_color = infoBarTextColor, bgcolor = infoBarBgColor, text_size = txtSize)
